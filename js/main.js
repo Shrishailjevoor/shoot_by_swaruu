@@ -1,302 +1,364 @@
-'use strict';
+
+"use strict";
 
 (() => {
-  /* =========================================================
-     SERVERLESS LEAD CAPTURE CONFIGURATION (OPTIONAL)
-     Paste your URLs/Keys inside the quotes below.
-  ========================================================= */
-  const GOOGLE_SHEETS_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbyocNGIxakY0gZj7mmPVei7Ze0LoYOO_c9JSeXVXcRhFTNpNIZ9YaozMv3isddx5s5jiA/exec'; // Paste your https://script.google.com/macros/s/.../exec URL here
-  const WEB3FORMS_ACCESS_KEY = '424146bc-0397-4b36-95e3-62fa5204c5d1';      // Paste your Web3Forms Access Key here (optional, for instant email alerts)
+  const $ = (selector, root = document) => root.querySelector(selector);
+  const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
-  const header = document.querySelector('#site-header');
-  const menuToggle = document.querySelector('#menu-toggle');
-  const primaryNav = document.querySelector('#primary-nav');
-  const modalBackdrop = document.querySelector('#booking-modal');
-  const modal = document.querySelector('.booking-modal');
-  const bookingForm = document.querySelector('#booking-form');
-  const packageSelect = document.querySelector('#client-package');
-  const confirmation = document.querySelector('#booking-confirmation');
-  const confirmationSummary = document.querySelector('#confirmation-summary');
-  const whatsappLink = document.querySelector('#whatsapp-link');
-  const shootDate = document.querySelector('#shoot-date');
-  const shootHour = document.querySelector('#shoot-hour');
-  const shootMinute = document.querySelector('#shoot-minute');
-  const shootPeriodInputs = [...document.querySelectorAll('input[name="shootPeriod"]')];
-  const livePackageSummary = document.querySelector('#live-package-summary');
-  const liveSlotSummary = document.querySelector('#live-slot-summary');
-  const livePriceSummary = document.querySelector('#live-price-summary');
+  const STUDIO_WHATSAPP = "918310873925";
 
-  let lastFocusedElement = null;
+  const header = $("#site-header");
+  const menuToggle = $("#menu-toggle");
+  const nav = $("#primary-nav");
+  const backdrop = $("#booking-modal");
+  const modal = $(".booking-modal");
+  const form = $("#booking-form");
+  const packageSelect = $("#client-package");
+  const shootDate = $("#shoot-date");
+  const hourSelect = $("#shoot-hour");
+  const minuteSelect = $("#shoot-minute");
+  const periodSelect = $("#shoot-period");
+  const successPanel = $("#booking-success");
+  const whatsappLink = $("#whatsapp-link");
 
-  const localDate = (date) => [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, '0'),
-    String(date.getDate()).padStart(2, '0')
-  ].join('-');
-
-  const getSelectedAmPmTime = () => {
-    const hour = shootHour?.value || '04';
-    const minute = shootMinute?.value || '30';
-    const period = shootPeriodInputs.find((r) => r.checked)?.value || 'PM';
-    return `${hour}:${minute} ${period}`;
-  };
-
-  const parsePrice = (text) => {
-    const match = String(text || '').replace(/,/g, '').match(/₹\s*(\d+)/);
-    return match ? Number(match[1]) : 0;
-  };
-
-  // Silently send booking lead to Google Sheets & Web3Forms in the background
-  function captureLeadInBackground(leadData) {
-    // 1. Send to Google Sheets (via Google Apps Script Web App)
-    if (GOOGLE_SHEETS_WEBHOOK_URL) {
-      fetch(GOOGLE_SHEETS_WEBHOOK_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(leadData)
-      }).catch(() => {
-        // Fail silently so the client's WhatsApp booking flow is never interrupted
-      });
-    }
-
-    // 2. Send Instant Email Notification (via Web3Forms)
-    if (WEB3FORMS_ACCESS_KEY) {
-      fetch('https://api.web3forms.com/submit', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json'
-        },
-        body: JSON.stringify({
-          access_key: WEB3FORMS_ACCESS_KEY,
-          subject: `New Shoot Booking: ${leadData.name} (${leadData.package})`,
-          from_name: 'Shoot by Swaruu Website',
-          ...leadData
-        })
-      }).catch(() => {
-        // Fail silently so the client's WhatsApp booking flow is never interrupted
-      });
-    }
+  if (
+    !header || !menuToggle || !nav || !backdrop || !modal ||
+    !form || !packageSelect || !shootDate || !hourSelect ||
+    !minuteSelect || !periodSelect || !successPanel || !whatsappLink
+  ) {
+    console.error(
+      "Shoot by Swaruu: a required HTML element is missing. " +
+      "Check index.html against the new code."
+    );
+    return;
   }
 
-  const year = document.querySelector('#current-year');
-  if (year) year.textContent = new Date().getFullYear();
+  let previouslyFocused = null;
 
-  if (shootDate) {
-    const today = localDate(new Date());
-    shootDate.min = today;
-    shootDate.value = today;
+  function localDate(date = new Date()) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
   }
 
-  // Update live summary bar inside booking modal
-  function updateLiveSummary() {
-    if (!bookingForm) return;
-    const selectedPkg = packageSelect?.value || '1 REEL — ₹2,000';
-    const basePrice = parsePrice(selectedPkg);
-    const checkedAddons = [...bookingForm.querySelectorAll('input[name="addons"]:checked')];
-    const addonsTotal = checkedAddons.reduce((sum, input) => sum + parsePrice(input.value), 0);
-    const total = basePrice + addonsTotal;
+  function formatDate(dateString) {
+    if (!dateString) return "Choose a date";
 
-    if (livePackageSummary) {
-      livePackageSummary.textContent = checkedAddons.length
-        ? `${selectedPkg.split('—')[0].trim()} + ${checkedAddons.length} Add-on${checkedAddons.length > 1 ? 's' : ''}`
-        : selectedPkg;
-    }
-
-    if (liveSlotSummary) {
-      const dateVal = shootDate?.value
-        ? new Date(`${shootDate.value}T12:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-        : 'Select date';
-      const timeVal = getSelectedAmPmTime();
-      liveSlotSummary.textContent = `${dateVal} · ${timeVal}`;
-    }
-
-    if (livePriceSummary) {
-      livePriceSummary.textContent = `₹${total.toLocaleString('en-IN')}`;
-    }
+    return new Date(`${dateString}T12:00:00`).toLocaleDateString("en-IN", {
+      day: "numeric",
+      month: "short",
+      year: "numeric"
+    });
   }
 
-  shootDate?.addEventListener('change', updateLiveSummary);
-  shootHour?.addEventListener('change', updateLiveSummary);
-  shootMinute?.addEventListener('change', updateLiveSummary);
-  shootPeriodInputs.forEach((radio) => radio.addEventListener('change', updateLiveSummary));
-  packageSelect?.addEventListener('change', updateLiveSummary);
-  bookingForm?.querySelectorAll('input[name="addons"]').forEach((checkbox) => {
-    checkbox.addEventListener('change', updateLiveSummary);
-  });
+  function rupees(value) {
+    return `₹${Number(value).toLocaleString("en-IN")}`;
+  }
 
+  function selectedPackage() {
+    return packageSelect.selectedOptions[0];
+  }
+
+  function selectedAddons() {
+    return $$('input[name="addons"]:checked', form);
+  }
+
+  function selectedTime() {
+    return `${hourSelect.value}:${minuteSelect.value} ${periodSelect.value}`;
+  }
+
+  // Live package and add-on estimate.
+  function updateEstimate() {
+    const option = selectedPackage();
+    if (!option) return;
+
+    const basePrice = Number(option.dataset.price || 0);
+    const addons = selectedAddons();
+
+    const addonTotal = addons.reduce((sum, item) => {
+      return sum + Number(item.dataset.price || 0);
+    }, 0);
+
+    const hasVariablePrice = addons.some(item => {
+      return item.dataset.variable === "true";
+    });
+
+    $("#summary-package").textContent = option.textContent.trim();
+
+    $("#summary-date").textContent =
+      `${formatDate(shootDate.value)} · ${selectedTime()}`;
+
+    $("#summary-price").textContent =
+      `${rupees(basePrice + addonTotal)}${hasVariablePrice ? "+" : ""}`;
+  }
+
+  // Mobile menu.
   function closeMenu() {
-    menuToggle?.setAttribute('aria-expanded', 'false');
-    menuToggle?.setAttribute('aria-label', 'Open navigation');
-    primaryNav?.classList.remove('is-open');
-    document.body.classList.remove('menu-open');
+    menuToggle.setAttribute("aria-expanded", "false");
+    menuToggle.setAttribute("aria-label", "Open navigation");
+    nav.classList.remove("is-open");
+    document.body.classList.remove("menu-open");
   }
 
-  menuToggle?.addEventListener('click', () => {
-    const shouldOpen = menuToggle.getAttribute('aria-expanded') !== 'true';
-    menuToggle.setAttribute('aria-expanded', String(shouldOpen));
-    menuToggle.setAttribute('aria-label', shouldOpen ? 'Close navigation' : 'Open navigation');
-    primaryNav?.classList.toggle('is-open', shouldOpen);
-    document.body.classList.toggle('menu-open', shouldOpen);
-  });
-  primaryNav?.querySelectorAll('a').forEach((link) => link.addEventListener('click', closeMenu));
-  window.addEventListener('resize', () => { if (window.innerWidth > 820) closeMenu(); });
-  document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeMenu(); });
+  function openMenu() {
+    menuToggle.setAttribute("aria-expanded", "true");
+    menuToggle.setAttribute("aria-label", "Close navigation");
+    nav.classList.add("is-open");
+    document.body.classList.add("menu-open");
+  }
 
-  const updateHeader = () => header?.classList.toggle('is-scrolled', window.scrollY > 16);
+  menuToggle.addEventListener("click", () => {
+    const open = menuToggle.getAttribute("aria-expanded") === "true";
+    open ? closeMenu() : openMenu();
+  });
+
+  $$(".primary-nav a", nav).forEach(link => {
+    link.addEventListener("click", closeMenu);
+  });
+
+  window.addEventListener("resize", () => {
+    if (window.innerWidth > 850) closeMenu();
+  });
+
+  // Header appearance after scrolling.
+  function updateHeader() {
+    header.classList.toggle("scrolled", window.scrollY > 10);
+  }
+
   updateHeader();
-  window.addEventListener('scroll', updateHeader, { passive: true });
+  window.addEventListener("scroll", updateHeader, { passive: true });
 
-  function openModal(selectedPackage, selectedAddon) {
-    if (!modalBackdrop || !bookingForm || !packageSelect) return;
-    lastFocusedElement = document.activeElement;
-    if (selectedPackage && [...packageSelect.options].some((option) => option.value === selectedPackage)) {
-      packageSelect.value = selectedPackage;
-    }
-    if (selectedAddon) {
-      const checkbox = [...bookingForm.querySelectorAll('input[name="addons"]')].find((item) => item.value === selectedAddon);
-      if (checkbox) checkbox.checked = true;
-    }
-    updateLiveSummary();
-    bookingForm.hidden = false;
-    confirmation.hidden = true;
-    modalBackdrop.classList.add('is-open');
-    modalBackdrop.setAttribute('aria-hidden', 'false');
-    document.body.classList.add('modal-open');
-    closeMenu();
-    window.setTimeout(() => document.querySelector('#client-name')?.focus(), 80);
-  }
+  // Portfolio filters.
+  const filterButtons = $$(".filter-button");
+  const portfolioCards = $$(".portfolio-card");
 
-  function closeModal() {
-    if (!modalBackdrop) return;
-    modalBackdrop.classList.remove('is-open');
-    modalBackdrop.setAttribute('aria-hidden', 'true');
-    document.body.classList.remove('modal-open');
-    lastFocusedElement?.focus?.();
-  }
+  filterButtons.forEach(button => {
+    button.addEventListener("click", () => {
+      const filter = button.dataset.filter || "all";
 
-  document.querySelectorAll('[data-book]').forEach((element) => {
-    element.addEventListener('click', (event) => {
-      if (element.tagName === 'A' && element.getAttribute('href') === '#booking-modal') event.preventDefault();
-      openModal(element.dataset.book);
+      filterButtons.forEach(item => {
+        const active = item === button;
+        item.classList.toggle("active", active);
+        item.setAttribute("aria-pressed", String(active));
+      });
+
+      portfolioCards.forEach(card => {
+        const show = filter === "all" || card.dataset.category === filter;
+        card.hidden = !show;
+      });
     });
   });
-  document.querySelectorAll('[data-addon]').forEach((button) => {
-    button.addEventListener('click', () => openModal('1 REEL — ₹2,000', button.dataset.addon));
-  });
-  document.querySelectorAll('[data-close-modal]').forEach((button) => button.addEventListener('click', closeModal));
-  modalBackdrop?.addEventListener('click', (event) => { if (event.target === modalBackdrop) closeModal(); });
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && modalBackdrop?.classList.contains('is-open')) closeModal();
-    if (event.key !== 'Tab' || !modalBackdrop?.classList.contains('is-open') || !modal) return;
-    const focusable = [...modal.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])')]
-      .filter((element) => !element.closest('[hidden]'));
-    if (!focusable.length) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-  });
 
-  bookingForm?.addEventListener('submit', (event) => {
-    event.preventDefault();
-    if (!bookingForm.reportValidity()) return;
-    const formData = new FormData(bookingForm);
-    const addons = formData.getAll('addons').map(String);
-    const formattedTime = getSelectedAmPmTime();
+  // Booking modal.
+  function openBooking(packageKey) {
+    previouslyFocused = document.activeElement;
 
-    const booking = {
-      name: String(formData.get('name') || '').trim(),
-      phone: String(formData.get('phone') || '').trim(),
-      package: String(formData.get('package') || ''),
-      date: String(formData.get('date') || ''),
-      time: formattedTime,
-      shootType: String(formData.get('shootType') || ''),
-      location: String(formData.get('location') || '').trim(),
-      mapLink: String(formData.get('mapLink') || '').trim(),
-      addons,
-      message: String(formData.get('message') || '').trim()
-    };
-
-    const readableDate = booking.date
-      ? new Date(`${booking.date}T12:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
-      : booking.date;
-
-    const estimatedTotal = livePriceSummary?.textContent || booking.package;
-
-    // Trigger silent background lead capture (Google Sheets + Email)
-    captureLeadInBackground({
-      name: booking.name,
-      phone: booking.phone,
-      package: booking.package,
-      date: readableDate,
-      time: booking.time,
-      shootType: booking.shootType,
-      location: booking.location,
-      mapLink: booking.mapLink || 'Not provided',
-      addons: addons.length ? addons.join(', ') : 'None',
-      estimatedTotal,
-      message: booking.message || 'Not provided'
-    });
-
-    confirmationSummary.textContent = `Your ${booking.package} request for ${readableDate} at ${booking.time} in ${booking.location} is ready. Open WhatsApp to send the request; your shoot is not booked until the studio confirms it.`;
-
-    const messageLines = [
-      '*NEW SHOOT BOOKING — SHOOT BY SWARUU*',
-      `*Name / Brand:* ${booking.name}`,
-      `*Client WhatsApp:* ${booking.phone}`,
-      `*Package:* ${booking.package}`,
-      `*Preferred shoot date:* ${readableDate}`,
-      `*Preferred shoot timing:* ${booking.time}`,
-      `*Shoot type:* ${booking.shootType}`,
-      `*Location (Area / Venue):* ${booking.location}`
-    ];
-
-    if (booking.mapLink) {
-      messageLines.push(`*Google Maps Link:* ${booking.mapLink}`);
-    }
-
-    messageLines.push(
-      `*Additional services:* ${addons.length ? addons.join(', ') : 'None'}`,
-      `*Estimated Total:* ${estimatedTotal}`,
-      `*Creative brief:* ${booking.message || 'Not provided'}`,
-      '',
-      'Please confirm availability and share payment details. I understand that the date is confirmed only after the 50% advance payment.'
+    const optionExists = [...packageSelect.options].some(
+      option => option.value === packageKey
     );
 
-    const message = messageLines.join('\n');
-    whatsappLink.href = `https://wa.me/918310873925?text=${encodeURIComponent(message)}`;
-    bookingForm.hidden = true;
-    confirmation.hidden = false;
-    confirmation.querySelector('h3')?.focus();
-  });
+    if (packageKey && optionExists) {
+      packageSelect.value = packageKey;
+    }
 
-  // Single-open accordion for the booking terms.
-  const accordionItems = [...document.querySelectorAll('#terms-accordion .accordion-item')];
-  accordionItems.forEach((item) => {
-    const trigger = item.querySelector('.accordion-trigger');
-    const content = item.querySelector('.accordion-content');
-    const sign = trigger?.querySelector('b');
-    trigger?.addEventListener('click', () => {
-      const shouldOpen = trigger.getAttribute('aria-expanded') !== 'true';
-      accordionItems.forEach((other) => {
-        const otherTrigger = other.querySelector('.accordion-trigger');
-        const otherContent = other.querySelector('.accordion-content');
-        otherTrigger?.setAttribute('aria-expanded', 'false');
-        if (otherContent) otherContent.hidden = true;
-        other.classList.remove('is-open');
-        const otherSign = otherTrigger?.querySelector('b');
-        if (otherSign) otherSign.textContent = '+';
-      });
-      if (shouldOpen) {
-        trigger.setAttribute('aria-expanded', 'true');
-        if (content) content.hidden = false;
-        item.classList.add('is-open');
-        if (sign) sign.textContent = '−';
-      }
+    form.hidden = false;
+    successPanel.hidden = true;
+
+    backdrop.classList.add("open");
+    backdrop.setAttribute("aria-hidden", "false");
+    document.body.classList.add("modal-open");
+
+    closeMenu();
+    updateEstimate();
+
+    window.setTimeout(() => $("#client-name")?.focus(), 60);
+  }
+
+  function closeBooking() {
+    backdrop.classList.remove("open");
+    backdrop.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("modal-open");
+
+    if (previouslyFocused && typeof previouslyFocused.focus === "function") {
+      previouslyFocused.focus();
+    }
+  }
+
+  $$("[data-book]").forEach(button => {
+    button.addEventListener("click", event => {
+      event.preventDefault();
+      openBooking(button.dataset.book);
     });
   });
 
-  updateLiveSummary();
+  $$("[data-close-modal]").forEach(button => {
+    button.addEventListener("click", closeBooking);
+  });
+
+  backdrop.addEventListener("click", event => {
+    if (event.target === backdrop) closeBooking();
+  });
+
+  $("#edit-booking")?.addEventListener("click", () => {
+    successPanel.hidden = true;
+    form.hidden = false;
+    updateEstimate();
+    $("#client-name")?.focus();
+  });
+
+  // Keyboard support: Escape closes, Tab stays inside the open modal.
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+      closeMenu();
+
+      if (backdrop.classList.contains("open")) {
+        closeBooking();
+      }
+    }
+
+    if (
+      event.key !== "Tab" ||
+      !backdrop.classList.contains("open")
+    ) return;
+
+    const focusable = $$(
+      'a[href], button:not([disabled]), input:not([disabled]), ' +
+      'select:not([disabled]), textarea:not([disabled])',
+      modal
+    ).filter(element => !element.closest("[hidden]"));
+
+    if (!focusable.length) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
+
+  // Refresh the estimate when the customer changes anything.
+  [
+    packageSelect,
+    shootDate,
+    hourSelect,
+    minuteSelect,
+    periodSelect
+  ].forEach(control => {
+    control.addEventListener("change", updateEstimate);
+  });
+
+  $$('input[name="addons"]', form).forEach(input => {
+    input.addEventListener("change", updateEstimate);
+  });
+
+  // Date picker must not allow dates earlier than today.
+  function refreshMinimumDate() {
+    shootDate.min = localDate();
+  }
+
+  refreshMinimumDate();
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) refreshMinimumDate();
+  });
+
+  // Generate a WhatsApp booking request.
+  form.addEventListener("submit", event => {
+    event.preventDefault();
+
+    if (!form.reportValidity()) return;
+
+    const data = new FormData(form);
+    const date = String(data.get("date") || "");
+
+    if (date < localDate()) {
+      shootDate.setCustomValidity(
+        "Choose today or a future date."
+      );
+      shootDate.reportValidity();
+      shootDate.setCustomValidity("");
+      return;
+    }
+
+    const name = String(data.get("name") || "").trim();
+    const phone = String(data.get("phone") || "").trim();
+    const shootType = String(data.get("shootType") || "");
+    const location = String(data.get("location") || "").trim();
+    const mapLink = String(data.get("mapLink") || "").trim();
+    const brief = String(data.get("message") || "").trim();
+
+    const packageOption = selectedPackage();
+    const packageName = packageOption.textContent.trim();
+    const basePrice = Number(packageOption.dataset.price || 0);
+    const addons = selectedAddons();
+
+    const addonLines = addons.length
+      ? addons.map(item => {
+          const price = Number(item.dataset.price || 0);
+          const isHourly = item.dataset.variable === "true";
+
+          return `${item.value} — ${rupees(price)}${isHourly ? " per hour; actual amount to be confirmed" : ""}`;
+        })
+      : ["None"];
+
+    const addonTotal = addons.reduce((sum, item) => {
+      return sum + Number(item.dataset.price || 0);
+    }, 0);
+
+    const requiresQuote = addons.some(item => {
+      return item.dataset.variable === "true";
+    });
+
+    const estimate = `${rupees(basePrice + addonTotal)}${requiresQuote ? "+" : ""}`;
+
+    const lines = [
+      "*NEW SHOOT REQUEST — SHOOT BY SWARUU*",
+      "",
+      `*Name / business:* ${name}`,
+      `*Client WhatsApp:* ${phone}`,
+      `*Package:* ${packageName}`,
+      `*Shoot type:* ${shootType}`,
+      `*Preferred date:* ${formatDate(date)}`,
+      `*Preferred time:* ${selectedTime()}`,
+      `*Location:* ${location}`
+    ];
+
+    if (mapLink) {
+      lines.push(`*Google Maps link:* ${mapLink}`);
+    }
+
+    lines.push(
+      `*Add-ons:* ${addonLines.join("; ")}`,
+      `*Estimated total:* ${estimate}`,
+      `*Creative brief:* ${brief || "Not provided"}`,
+      "",
+      "Please confirm availability, final pricing and delivery timeline. " +
+      "This is a booking request, not a confirmed reservation."
+    );
+
+    whatsappLink.href =
+      `https://wa.me/${STUDIO_WHATSAPP}?text=${encodeURIComponent(lines.join("\n"))}`;
+
+    $("#success-summary").textContent =
+      `Your ${packageName} request for ${formatDate(date)} at ${selectedTime()} ` +
+      "is ready. Open WhatsApp to review and send it to the studio. " +
+      "The shoot is not confirmed until the studio replies.";
+
+    form.hidden = true;
+    successPanel.hidden = false;
+
+    $(".booking-success h3")?.focus();
+  });
+
+  // Current year in the footer.
+  const year = $("#current-year");
+  if (year) year.textContent = new Date().getFullYear();
+
+  updateEstimate();
 })();

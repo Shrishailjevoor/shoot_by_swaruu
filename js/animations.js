@@ -1,132 +1,108 @@
+
 "use strict";
 
-/* =========================================
-   SHOOT BY SWARUU
-   Animation Controller
-========================================= */
+(() => {
+  const revealItems = document.querySelectorAll(".reveal");
+  const navigationLinks = [
+    ...document.querySelectorAll(".primary-nav .nav-link")
+  ];
 
-document.addEventListener("DOMContentLoaded", () => {
-    // Enable CSS scroll-reveal animations safely
-    document.documentElement.classList.add("js-ready");
+  const reduceMotion = window.matchMedia(
+    "(prefers-reduced-motion: reduce)"
+  ).matches;
 
-    const reducedMotion = window.matchMedia(
-        "(prefers-reduced-motion: reduce)"
-    ).matches;
+  // Enable the reveal styles only after this script is running.
+  document.documentElement.classList.add("js");
 
-    /* =====================================
-       SCROLL REVEAL
-    ===================================== */
+  // Keep all content visible if animation isn't supported or is disabled.
+  if (
+    reduceMotion ||
+    !("IntersectionObserver" in window)
+  ) {
+    revealItems.forEach(item => item.classList.add("is-visible"));
+  } else {
+    const revealObserver = new IntersectionObserver(
+      entries => {
+        entries.forEach(entry => {
+          if (!entry.isIntersecting) return;
 
-    const revealElements = document.querySelectorAll(".reveal");
-
-    if (reducedMotion || !("IntersectionObserver" in window)) {
-        revealElements.forEach((element) => {
-            element.classList.add("visible", "is-visible");
+          entry.target.classList.add("is-visible");
+          revealObserver.unobserve(entry.target);
         });
-    } else {
-        const revealObserver = new IntersectionObserver(
-            (entries, observer) => {
-                entries.forEach((entry) => {
-                    if (!entry.isIntersecting) return;
-                    entry.target.classList.add("visible", "is-visible");
-                    observer.unobserve(entry.target);
-                });
-            },
-            {
-                threshold: 0.12,
-                rootMargin: "0px 0px -30px 0px"
-            }
-        );
+      },
+      {
+        threshold: 0.12,
+        rootMargin: "0px 0px -25px 0px"
+      }
+    );
 
-        revealElements.forEach((element) => {
-            const parent = element.parentElement;
+    revealItems.forEach(item => revealObserver.observe(item));
+  }
 
-            // Stagger elements that share the same parent
-            const siblings = parent
-                ? Array.from(parent.children).filter((child) =>
-                      child.classList.contains("reveal")
-                  )
-                : [];
+  // Map the Home link to the hero section, not the entire main element.
+  const sections = navigationLinks
+    .map(link => {
+      const href = link.getAttribute("href");
 
-            const siblingIndex = siblings.indexOf(element);
+      if (href === "#home") {
+        return document.querySelector(".hero");
+      }
 
-            element.style.transitionDelay =
-                `${Math.max(0, siblingIndex) * 65}ms`;
+      return href ? document.querySelector(href) : null;
+    })
+    .filter(Boolean);
 
-            revealObserver.observe(element);
+  if ("IntersectionObserver" in window && sections.length) {
+    const navObserver = new IntersectionObserver(
+      entries => {
+        const visible = entries
+          .filter(entry => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+
+        if (!visible.length) return;
+
+        const activeId =
+          visible[0].target.id || "home";
+
+        navigationLinks.forEach(link => {
+          const href = link.getAttribute("href");
+          const matches =
+            href === `#${activeId}` ||
+            (activeId === "home" && href === "#home");
+
+          link.classList.toggle("active", matches);
         });
-    }
+      },
+      {
+        rootMargin: "-28% 0px -60% 0px",
+        threshold: [0, 0.15, 0.35, 0.6]
+      }
+    );
 
-    /* =====================================
-       HOVER TILT (DESKTOP POINTERS ONLY)
-    ===================================== */
+    sections.forEach(section => navObserver.observe(section));
+  }
 
-    const finePointer = window.matchMedia(
-        "(hover: hover) and (pointer: fine)"
-    ).matches;
+  // Subtle pointer glow for desktop pointer devices only.
+  // It uses a CSS custom property; there is no continuous animation loop.
+  const finePointer = window.matchMedia(
+    "(hover: hover) and (pointer: fine)"
+  ).matches;
 
-    if (!reducedMotion && finePointer) {
-        const tiltCards = document.querySelectorAll(
-            "[data-tilt], .portfolio-card, .service-card, .gallery-card"
-        );
+  if (finePointer && !reduceMotion) {
+    const cards = document.querySelectorAll(
+      ".foundation-card, .package-card, .specialty-card"
+    );
 
-        tiltCards.forEach((card) => {
-            card.addEventListener("pointermove", (event) => {
-                const rect = card.getBoundingClientRect();
-                const x = event.clientX - rect.left;
-                const y = event.clientY - rect.top;
-                const centerX = rect.width / 2;
-                const centerY = rect.height / 2;
+    cards.forEach(card => {
+      card.addEventListener("pointermove", event => {
+        const rect = card.getBoundingClientRect();
 
-                const rotateY = ((x - centerX) / centerX) * 2.5;
-                const rotateX = ((centerY - y) / centerY) * 2.5;
+        const x = ((event.clientX - rect.left) / rect.width) * 100;
+        const y = ((event.clientY - rect.top) / rect.height) * 100;
 
-                card.style.transform =
-                    `perspective(950px) ` +
-                    `rotateX(${rotateX.toFixed(2)}deg) ` +
-                    `rotateY(${rotateY.toFixed(2)}deg) ` +
-                    `translateY(-5px)`;
-            });
-
-            card.addEventListener("pointerleave", () => {
-                card.style.transform = "";
-            });
-        });
-
-        /* =====================================
-           HERO PARALLAX
-        ===================================== */
-
-        const heroVisual = document.querySelector("[data-parallax]");
-        const heroWrap = heroVisual?.querySelector(".hero-image-wrap");
-
-        if (heroVisual && heroWrap) {
-            heroVisual.addEventListener("pointermove", (event) => {
-                const rect = heroVisual.getBoundingClientRect();
-                const x = (event.clientX - rect.left) / rect.width - 0.5;
-                const y = (event.clientY - rect.top) / rect.height - 0.5;
-
-                heroWrap.style.transform =
-                    `rotateY(${(-x * 5).toFixed(2)}deg) ` +
-                    `rotateX(${(y * 5).toFixed(2)}deg) ` +
-                    `translateY(-4px)`;
-            });
-
-            heroVisual.addEventListener("pointerleave", () => {
-                heroWrap.style.transform = "";
-            });
-        }
-    }
-
-    /* =====================================
-       PAUSE MARQUEE WHEN HIDDEN
-    ===================================== */
-
-    const marquee = document.querySelector(".marquee-track");
-
-    document.addEventListener("visibilitychange", () => {
-        if (!marquee || reducedMotion) return;
-        marquee.style.animationPlayState =
-            document.hidden ? "paused" : "running";
+        card.style.setProperty("--pointer-x", `${x}%`);
+        card.style.setProperty("--pointer-y", `${y}%`);
+      });
     });
-});
+  }
+})();
